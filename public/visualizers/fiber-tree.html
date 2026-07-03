@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fiber Tree Visualizer - React Internals Masterclass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .fiber-node { cursor: pointer; transition: all 0.2s; }
+        .fiber-node:hover { background: #fef3c7; }
+        .dark .fiber-node:hover { background: #78350f; }
+        .fiber-node.selected { border-color: #f59e0b; background: #fef3c7; box-shadow: 0 0 0 2px #f59e0b; }
+        .dark .fiber-node.selected { background: #78350f; }
+        .connector { stroke: #94a3b8; stroke-width: 1.5; }
+        .connector.alternate { stroke: #f59e0b; stroke-dasharray: 5,5; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
+    <header class="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <a href="../index.html" class="flex items-center gap-2 font-bold text-xl text-primary-600 dark:text-primary-400">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                React Internals
+            </a>
+            <span class="text-sm text-gray-500">Fiber Tree Visualizer</span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <div class="mb-6">
+            <h1 class="text-3xl font-bold mb-2">Fiber Tree Visualizer</h1>
+            <p class="text-gray-600 dark:text-gray-400">Explore Fiber nodes with parent/child/sibling/alternate pointers. Click nodes to inspect properties.</p>
+        </div>
+
+        <div class="grid lg:grid-cols-[280px_1fr] gap-6">
+            <!-- Sidebar: Tree Navigation -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 h-fit sticky top-24 max-h-[calc(100vh-10rem)] overflow-y-auto">
+                <h2 class="font-semibold mb-3">Fiber Tree (Current)</h2>
+                <div id="treeNav" class="space-y-1 text-sm font-mono">
+                    <!-- Tree rendered here -->
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <h3 class="font-semibold mb-2">Legend</h3>
+                    <div class="space-y-1 text-xs">
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded bg-blue-500"></div><span>HostComponent (div, span, etc.)</span></div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded bg-purple-500"></div><span>FunctionComponent</span></div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded bg-green-500"></div><span>ClassComponent</span></div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded bg-orange-500"></div><span>HostRoot</span></div>
+                        <div class="flex items-center gap-2"><div class="w-3 h-3 rounded bg-gray-500"></div><span>HostText</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main: Details + Visualization -->
+            <div class="space-y-6">
+                <!-- Fiber Node Details -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" id="fiberDetails">
+                    <h2 class="text-xl font-semibold mb-4">Fiber Node Properties</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="fiberProps">
+                        <!-- Properties rendered here -->
+                    </div>
+                </div>
+
+                <!-- Visual Tree Diagram -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                    <h2 class="text-xl font-semibold mb-4">Tree Visualization</h2>
+                    <div class="relative" style="height: 500px;">
+                        <svg id="treeSvg" width="100%" height="100%" style="cursor: grab;"></svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Sample Fiber Tree Data
+        const fiberTree = {
+            tag: 3, // HostRoot
+            type: null,
+            stateNode: { containerInfo: '#root' },
+            child: {
+                tag: 0, // FunctionComponent
+                type: 'App',
+                stateNode: null,
+                memoizedProps: {},
+                memoizedState: { count: 0 },
+                pendingProps: {},
+                alternate: { memoizedState: { count: 0 } },
+                flags: 0,
+                lanes: 1,
+                child: {
+                    tag: 5, // HostComponent (div)
+                    type: 'div',
+                    stateNode: { tagName: 'DIV', className: 'container' },
+                    memoizedProps: { className: 'container', children: [] },
+                    pendingProps: { className: 'container', children: [] },
+                    alternate: { memoizedProps: { className: 'container' } },
+                    flags: 0,
+                    lanes: 1,
+                    child: {
+                        tag: 0, // FunctionComponent
+                        type: 'Counter',
+                        stateNode: null,
+                        memoizedProps: {},
+                        memoizedState: { count: 0 },
+                        pendingProps: {},
+                        alternate: { memoizedState: { count: 0 } },
+                        flags: 2, // Update
+                        lanes: 1,
+                        child: {
+                            tag: 5, // HostComponent (div)
+                            type: 'div',
+                            stateNode: { tagName: 'DIV', className: 'counter' },
+                            memoizedProps: { className: 'counter', children: [] },
+                            pendingProps: { className: 'counter', children: [] },
+                            alternate: { memoizedProps: { className: 'counter' } },
+                            flags: 0,
+                            lanes: 1,
+                            child: {
+                                tag: 5, // HostComponent (h1)
+                                type: 'h1',
+                                stateNode: { tagName: 'H1', textContent: '0' },
+                                memoizedProps: { children: 0 },
+                                pendingProps: { children: 1 },
+                                alternate: { memoizedProps: { children: 0 } },
+                                flags: 2, // Update
+                                lanes: 1,
+                                child: null,
+                                sibling: {
+                                    tag: 5, // HostComponent (p)
+                                    type: 'p',
+                                    stateNode: { tagName: 'P', textContent: 'Doubled: 0' },
+                                    memoizedProps: { children: 'Doubled: 0' },
+                                    pendingProps: { children: 'Doubled: 2' },
+                                    alternate: { memoizedProps: { children: 'Doubled: 0' } },
+                                    flags: 2, // Update
+                                    lanes: 1,
+                                    child: null,
+                                    sibling: null,
+                                    return: null // set below
+                                },
+                                return: null // set below
+                            },
+                            sibling: null,
+                            return: null // set below
+                        },
+                        sibling: null,
+                        return: null // set below
+                    },
+                    sibling: null,
+                    return: null // set below
+                },
+                sibling: null,
+                return: null // set below
+            },
+            sibling: null,
+            return: null
+        };
+
+        // Set return pointers
+        function setReturnPointers(node, parent = null) {
+            if (!node) return;
+            node.return = parent;
+            if (node.child) setReturnPointers(node.child, node);
+            if (node.sibling) setReturnPointers(node.sibling, parent);
+        }
+        setReturnPointers(fiberTree);
+
+        const tagNames = {
+            0: 'FunctionComponent',
+            1: 'ClassComponent',
+            2: 'IndeterminateComponent',
+            3: 'HostRoot',
+            4: 'HostPortal',
+            5: 'HostComponent',
+            6: 'HostText',
+            7: 'Fragment',
+            8: 'Mode',
+            9: 'ContextConsumer',
+            10: 'ContextProvider',
+            11: 'ForwardRef',
+            12: 'Profiler',
+            13: 'SuspenseComponent',
+            14: 'MemoComponent',
+            15: 'SimpleMemoComponent',
+            16: 'LazyComponent',
+            17: 'IncompleteClassComponent',
+            18: 'DehydratedFragment',
+            19: 'SuspenseListComponent',
+            20: 'OffscreenComponent',
+            21: 'LegacyHiddenComponent',
+            22: 'CacheComponent',
+            23: 'TracingMarkerComponent'
+        };
+
+        const tagColors = {
+            0: '#a855f7', 1: '#22c55e', 2: '#64748b', 3: '#f97316',
+            4: '#06b6d4', 5: '#3b82f6', 6: '#64748b', 7: '#8b5cf6',
+            8: '#ec4899', 9: '#14b8a6', 10: '#14b8a6', 11: '#a855f7',
+            12: '#f59e0b', 13: '#f43f5e', 14: '#8b5cf6', 15: '#8b5cf6',
+            16: '#f59e0b', 17: '#ef4444', 18: '#64748b', 19: '#f43f5e',
+            20: '#0ea5e9', 21: '#64748b', 22: '#8b5cf6', 23: '#f59e0b'
+        };
+
+        const flagNames = {
+            1: 'Placement', 2: 'Update', 3: 'PlacementAndUpdate',
+            4: 'Deletion', 8: 'ContentReset', 16: 'Callback',
+            32: 'DidCapture', 64: 'Ref', 128: 'Snapshot',
+            256: 'Passive', 512: 'Hydrating', 1024: 'Visibility',
+            2048: 'StoreConsistency', 4096: 'ShouldCapture'
+        };
+
+        let selectedNode = null;
+        const treeNav = document.getElementById('treeNav');
+        const fiberProps = document.getElementById('fiberProps');
+        const treeSvg = document.getElementById('treeSvg');
+
+        // Build tree navigation
+        function buildTreeNav(node, depth = 0, path = '') {
+            if (!node) return '';
+
+            const tagName = tagNames[node.tag] || `Tag${node.tag}`;
+            const hasChildren = !!node.child;
+            const displayName = node.type || (node.tag === 6 ? `#text` : 'HostRoot');
+            const flags = node.flags ? Object.entries(flagNames).filter(([k]) => node.flags & parseInt(k)).map(([_, v]) => v).join(', ') : 'None';
+
+            let html = `
+                <div class="fiber-node px-2 py-1 rounded flex items-center gap-2 ${depth > 0 ? 'ml-4' : ''} ${selectedNode === node ? 'selected' : ''}"
+                     data-path="${path}"
+                     style="border-left: 2px solid ${tagColors[node.tag] || '#64748b'}">
+                    <span class="w-2 h-2 rounded" style="background: ${tagColors[node.tag] || '#64748b'}"></span>
+                    <span class="font-medium">${displayName}</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400 ml-auto">${tagName}</span>
+                    ${flags !== 'None' ? `<span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">${flags}</span>` : ''}
+                </div>
+            `;
+
+            if (hasChildren) {
+                html += buildTreeNav(node.child, depth + 1, path + '/child');
+            }
+            if (node.sibling) {
+                html += buildTreeNav(node.sibling, depth, path.replace(/\/[^\/]+$/, '') + '/sibling');
+            }
+
+            return html;
+        }
+
+        function renderTreeNav() {
+            treeNav.innerHTML = buildTreeNav(fiberTree);
+
+            // Add click handlers
+            treeNav.querySelectorAll('.fiber-node').forEach(el => {
+                el.addEventListener('click', () => {
+                    const path = el.dataset.path;
+                    selectedNode = findNodeByPath(fiberTree, path);
+                    renderTreeNav();
+                    renderFiberDetails();
+                    renderTreeSvg();
+                });
+            });
+        }
+
+        function findNodeByPath(root, path) {
+            if (path === '') return root;
+            const parts = path.split('/').filter(Boolean);
+            let node = root;
+            for (const part of parts) {
+                if (part === 'child') node = node.child;
+                else if (part === 'sibling') node = node.sibling;
+                else return null;
+                if (!node) return null;
+            }
+            return node;
+        }
+
+        function renderFiberDetails() {
+            if (!selectedNode) {
+                fiberProps.innerHTML = '<p class="col-span-full text-gray-500 dark:text-gray-400 text-center py-8">Click a fiber node to inspect its properties</p>';
+                return;
+            }
+
+            const node = selectedNode;
+            const props = [
+                { key: 'tag', value: `${node.tag} (${tagNames[node.tag] || 'Unknown'})` },
+                { key: 'type', value: node.type ? (typeof node.type === 'function' ? node.type.name || 'Anonymous' : String(node.type)) : 'null' },
+                { key: 'stateNode', value: node.stateNode ? (node.stateNode.tagName ? `<${node.stateNode.tagName.toLowerCase()}>` : 'Object') : 'null' },
+                { key: 'flags', value: node.flags ? Object.entries(flagNames).filter(([k]) => node.flags & parseInt(k)).map(([_, v]) => v).join(' | ') : 'None' },
+                { key: 'lanes', value: node.lanes.toString(2).padStart(31, '0') },
+                { key: 'memoizedProps', value: JSON.stringify(node.memoizedProps || {}, null, 2) },
+                { key: 'pendingProps', value: JSON.stringify(node.pendingProps || {}, null, 2) },
+                { key: 'memoizedState', value: JSON.stringify(node.memoizedState || {}, null, 2) },
+                { key: 'alternate', value: node.alternate ? 'Exists (WIP/Current pair)' : 'None' },
+                { key: 'child', value: node.child ? '→ ' + (node.child.type || 'HostRoot') : 'null' },
+                { key: 'sibling', value: node.sibling ? '→ ' + (node.sibling.type || 'HostRoot') : 'null' },
+                { key: 'return', value: node.return ? '← ' + (node.return.type || 'HostRoot') : 'null (root)' }
+            ];
+
+            fiberProps.innerHTML = props.map(p => `
+                <div class="col-span-1 md:col-span-2 lg:col-span-1">
+                    <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">${p.key}</label>
+                    <pre class="font-mono text-xs bg-gray-950 dark:bg-gray-900 p-2 rounded max-h-32 overflow-auto text-gray-300">${p.value}</pre>
+                </div>
+            `).join('');
+        }
+
+        // SVG Tree Visualization
+        function renderTreeSvg() {
+            const width = treeSvg.clientWidth || 800;
+            const height = 500;
+            treeSvg.innerHTML = '';
+
+            // Calculate positions
+            const nodes = [];
+            function collectNodes(node, depth = 0, x = 0, parentX = 0) {
+                if (!node) return;
+                nodes.push({ node, depth, x, parentX });
+                if (node.child) collectNodes(node.child, depth + 1, x, x);
+                if (node.sibling) collectNodes(node.sibling, depth, x + 180, parentX);
+            }
+            collectNodes(fiberTree);
+
+            // Adjust x positions for layout
+            const depthNodes = {};
+            nodes.forEach(n => {
+                if (!depthNodes[n.depth]) depthNodes[n.depth] = [];
+                depthNodes[n.depth].push(n);
+            });
+
+            // Center each depth
+            Object.values(depthNodes).forEach(arr => {
+                const totalWidth = (arr.length - 1) * 180;
+                const startX = (width - totalWidth) / 2;
+                arr.forEach((n, i) => { n.x = startX + i * 180; });
+            });
+
+            const centerY = 50;
+            const levelHeight = 100;
+
+            // Draw connections first
+            nodes.forEach(n => {
+                if (n.node.return) {
+                    const parent = nodes.find(p => p.node === n.node.return);
+                    if (parent) {
+                        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                        line.setAttribute('x1', parent.x + 60);
+                        line.setAttribute('y1', centerY + parent.depth * levelHeight + 40);
+                        line.setAttribute('x2', n.x + 60);
+                        line.setAttribute('y2', centerY + n.depth * levelHeight);
+                        line.setAttribute('class', 'connector');
+                        treeSvg.appendChild(line);
+                    }
+                }
+                // Alternate connection (dashed)
+                if (n.node.alternate) {
+                    // In real tree, alternate would be in separate tree
+                    // For visualization, draw a dashed line to a phantom position
+                }
+            });
+
+            // Draw nodes
+            nodes.forEach(n => {
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.setAttribute('transform', `translate(${n.x}, ${centerY + n.depth * levelHeight})`);
+                g.style.cursor = 'pointer';
+                g.dataset.path = getPath(n.node);
+
+                // Node box
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', 0);
+                rect.setAttribute('y', 0);
+                rect.setAttribute('width', 120);
+                rect.setAttribute('height', 50);
+                rect.setAttribute('rx', 6);
+                rect.setAttribute('fill', tagColors[n.node.tag] || '#64748b');
+                rect.setAttribute('opacity', n.node === selectedNode ? '1' : '0.85');
+                rect.setAttribute('stroke', n.node === selectedNode ? '#f59e0b' : 'transparent');
+                rect.setAttribute('stroke-width', 2);
+                rect.setAttribute('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
+                g.appendChild(rect);
+
+                // Type label
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', 60);
+                text.setAttribute('y', 20);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('fill', 'white');
+                text.setAttribute('font-size', '11');
+                text.setAttribute('font-weight', '600');
+                text.setAttribute('font-family', 'JetBrains Mono, monospace');
+                text.textContent = n.node.type || (n.node.tag === 6 ? '#text' : 'HostRoot');
+                g.appendChild(text);
+
+                // Tag label
+                const tagText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                tagText.setAttribute('x', 60);
+                tagText.setAttribute('y', 38);
+                tagText.setAttribute('text-anchor', 'middle');
+                tagText.setAttribute('fill', 'rgba(255,255,255,0.8)');
+                tagText.setAttribute('font-size', '9');
+                tagText.setAttribute('font-family', 'JetBrains Mono, monospace');
+                tagText.textContent = tagNames[n.node.tag] || `Tag${n.node.tag}`;
+                g.appendChild(tagText);
+
+                // Flags indicator
+                if (n.node.flags) {
+                    const flagIndicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    flagIndicator.setAttribute('cx', 110);
+                    flagIndicator.setAttribute('cy', 10);
+                    flagIndicator.setAttribute('r', 6);
+                    flagIndicator.setAttribute('fill', '#f59e0b');
+                    g.appendChild(flagIndicator);
+                }
+
+                g.addEventListener('click', () => {
+                    selectedNode = n.node;
+                    renderTreeNav();
+                    renderFiberDetails();
+                    renderTreeSvg();
+                });
+
+                treeSvg.appendChild(g);
+            });
+        }
+
+        function getPath(node) {
+            const path = [];
+            let current = node;
+            while (current.return) {
+                if (current.return.child === current) path.unshift('child');
+                else path.unshift('sibling');
+                current = current.return;
+            }
+            return path.join('/');
+        }
+
+        // Pan/zoom for SVG
+        let isPanning = false;
+        let panStart = { x: 0, y: 0 };
+        let translate = { x: 0, y: 0 };
+        let scale = 1;
+
+        treeSvg.addEventListener('mousedown', (e) => {
+            if (e.target === treeSvg) {
+                isPanning = true;
+                panStart = { x: e.clientX - translate.x, y: e.clientY - translate.y };
+                treeSvg.style.cursor = 'grabbing';
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                translate.x = e.clientX - panStart.x;
+                translate.y = e.clientY - panStart.y;
+                treeSvg.querySelectorAll('g').forEach(g => {
+                    g.setAttribute('transform', g.getAttribute('transform').replace(/translate\([^)]+\)/, `translate(${translate.x}, ${translate.y})`));
+                });
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isPanning = false;
+            treeSvg.style.cursor = 'grab';
+        });
+
+        treeSvg.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            scale = Math.min(Math.max(scale * delta, 0.3), 3);
+            treeSvg.style.transform = `scale(${scale})`;
+        }, { passive: false });
+
+        // Initialize
+        renderTreeNav();
+        renderFiberDetails();
+        renderTreeSvg();
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            renderTreeSvg();
+        });
+    </script>
+</body>
+</html>

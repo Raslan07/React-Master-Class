@@ -1,13 +1,15 @@
-import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Menu, X, Sun, Moon, BookOpen, Search, Github } from 'lucide-react'
-import { useTheme } from '../../hooks/useTheme'
 
-export function Header() {
+interface HeaderProps {
+  theme: 'light' | 'dark'
+  onToggleTheme: () => void
+}
+
+export function Header({ theme, onToggleTheme }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const location = useLocation()
-  const { theme, toggleTheme } = useTheme()
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur-sm">
@@ -70,7 +72,7 @@ export function Header() {
           </button>
 
           <button
-            onClick={toggleTheme}
+            onClick={onToggleTheme}
             className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
             aria-label="Toggle theme"
           >

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconciliation Visualizer - React Internals Masterclass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .tree-node { transition: all 0.3s ease; }
+        .tree-node.highlight-same { border-color: #22c55e; background: #f0fdf4; }
+        .tree-node.highlight-props { border-color: #eab308; background: #fefce8; }
+        .tree-node.highlight-replace { border-color: #ef4444; background: #fef2f2; }
+        .tree-node.highlight-move { border-color: #3b82f6; background: #eff6ff; }
+        .dark .tree-node.highlight-same { background: #14532d; }
+        .dark .tree-node.highlight-props { background: #713f12; }
+        .dark .tree-node.highlight-replace { background: #7f1d1d; }
+        .dark .tree-node.highlight-move { background: #1e3a5f; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
+    <header class="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <a href="../index.html" class="flex items-center gap-2 font-bold text-xl text-primary-600 dark:text-primary-400">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                React Internals
+            </a>
+            <span class="text-sm text-gray-500">Reconciliation Visualizer</span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold mb-2">Reconciliation Visualizer</h1>
+            <p class="text-gray-600 dark:text-gray-400">Compare old vs new trees, see the diffing algorithm highlight changes in real-time</p>
+        </div>
+
+        <!-- Scenario Selector -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Choose Scenario</h2>
+            <div class="flex flex-wrap gap-3" id="scenarioButtons">
+                <!-- Scenarios rendered by JS -->
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6">
+            <h3 class="font-semibold mb-3">Legend</h3>
+            <div class="flex flex-wrap gap-4 text-sm">
+                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded border-2 border-green-500 bg-green-50 dark:bg-green-900/30"></div><span>Same (no change)</span></div>
+                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/30"></div><span>Props changed</span></div>
+                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded border-2 border-red-500 bg-red-50 dark:bg-red-900/30"></div><span>Replaced (different type)</span></div>
+                <div class="flex items-center gap-2"><div class="w-4 h-4 rounded border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30"></div><span>Moved (with key)</span></div>
+            </div>
+        </div>
+
+        <!-- Trees Comparison -->
+        <div class="grid lg:grid-cols-2 gap-6 mb-6">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                    Old Tree (Current Fiber)
+                </h2>
+                <div id="oldTree" class="font-mono text-sm space-y-1 min-h-[300px]"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-green-500"></span>
+                    New Tree (Work In Progress)
+                </h2>
+                <div id="newTree" class="font-mono text-sm space-y-1 min-h-[300px]"></div>
+            </div>
+        </div>
+
+        <!-- Diff Details -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h2 class="text-xl font-semibold mb-4">Diff Analysis</h2>
+            <div id="diffDetails" class="font-mono text-sm bg-gray-950 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-auto">
+                Select a scenario to see the diff analysis
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const scenarios = {
+            'same-type-props': {
+                name: 'Same Element Type, Props Change',
+                description: 'Div with className change - React updates props in place',
+                oldTree: [
+                    { type: 'div', props: { className: 'container', id: 'root' }, children: [
+                        { type: 'h1', props: { children: 'Hello' }, children: [] },
+                        { type: 'p', props: { className: 'text-gray', children: 'World' }, children: [] }
+                    ]}
+                ],
+                newTree: [
+                    { type: 'div', props: { className: 'container primary', id: 'root' }, children: [
+                        { type: 'h1', props: { children: 'Hello' }, children: [] },
+                        { type: 'p', props: { className: 'text-blue', children: 'World' }, children: [] }
+                    ]}
+                ],
+                diff: `DIFF ANALYSIS:
+└── div (SAME TYPE)
+    ├── props: className "container" → "container primary" [UPDATED]
+    ├── props: id "root" → "root" [UNCHANGED]
+    ├── h1 (SAME TYPE)
+    │   └── props: children "Hello" → "Hello" [UNCHANGED]
+    └── p (SAME TYPE)
+        └── props: className "text-gray" → "text-blue" [UPDATED]
+        └── props: children "World" → "World" [UNCHANGED]
+
+RESULT: Update fiber flags, reuse DOM nodes, update changed attributes`
+            },
+            'different-type': {
+                name: 'Different Element Type',
+                description: 'Span changed to Div - React tears down old tree, creates new',
+                oldTree: [
+                    { type: 'span', props: { className: 'inline', children: 'Text' }, children: [] }
+                ],
+                newTree: [
+                    { type: 'div', props: { className: 'block', children: 'Text' }, children: [] }
+                ],
+                diff: `DIFF ANALYSIS:
+└── span → div (DIFFERENT TYPE)
+    ├── Old fiber: DELETION flag
+    ├── New fiber: PLACEMENT flag
+    ├── Old DOM node: REMOVED from tree
+    └── New DOM node: CREATED and INSERTED
+
+RESULT: Complete subtree replacement. All children unmounted, new tree mounted.
+        useEffect cleanup runs for old, mount for new.`
+            },
+            'list-without-keys': {
+                name: 'List Without Keys (Problematic)',
+                description: 'React matches by index - inefficient for insertions',
+                oldTree: [
+                    { type: 'ul', props: {}, children: [
+                        { type: 'li', props: { children: 'A' }, children: [] },
+                        { type: 'li', props: { children: 'B' }, children: [] },
+                        { type: 'li', props: { children: 'C' }, children: [] }
+                    ]}
+                ],
+                newTree: [
+                    { type: 'ul', props: {}, children: [
+                        { type: 'li', props: { children: 'X' }, children: [] },  // Inserted at start
+                        { type: 'li', props: { children: 'A' }, children: [] },
+                        { type: 'li', props: { children: 'B' }, children: [] },
+                        { type: 'li', props: { children: 'C' }, children: [] }
+                    ]}
+                ],
+                diff: `DIFF ANALYSIS (by index, NO KEYS):
+└── ul (SAME)
+    ├── li[0]: "A" → "X" [CONTENT CHANGED - UPDATE]
+    ├── li[1]: "B" → "A" [CONTENT CHANGED - UPDATE]
+    ├── li[2]: "C" → "B" [CONTENT CHANGED - UPDATE]
+    └── li[3]: undefined → "C" [NEW - PLACEMENT]
+
+PROBLEM: React thinks A→X, B→A, C→B are updates!
+        All 3 existing DOM nodes updated, 1 new node created.
+        State in components (inputs, scroll) gets corrupted.`
+            },
+            'list-with-keys': {
+                name: 'List With Keys (Optimal)',
+                description: 'React matches by key - efficient moves and insertions',
+                oldTree: [
+                    { type: 'ul', props: {}, children: [
+                        { type: 'li', props: { key: 'a', children: 'A' }, children: [] },
+                        { type: 'li', props: { key: 'b', children: 'B' }, children: [] },
+                        { type: 'li', props: { key: 'c', children: 'C' }, children: [] }
+                    ]}
+                ],
+                newTree: [
+                    { type: 'ul', props: {}, children: [
+                        { type: 'li', props: { key: 'x', children: 'X' }, children: [] },
+                        { type: 'li', props: { key: 'a', children: 'A' }, children: [] },
+                        { type: 'li', props: { key: 'b', children: 'B' }, children: [] },
+                        { type: 'li', props: { key: 'c', children: 'C' }, children: [] }
+                    ]}
+                ],
+                diff: `DIFF ANALYSIS (by KEY):
+└── ul (SAME)
+    ├── li[key="x"]: NEW [PLACEMENT] - inserted at position 0
+    ├── li[key="a"]: MOVED from index 0 → 1 [MOVE]
+    ├── li[key="b"]: MOVED from index 1 → 2 [MOVE]
+    └── li[key="c"]: MOVED from index 2 → 3 [MOVE]
+
+RESULT: Only 1 new DOM node created!
+        3 existing nodes moved (cheap DOM operation).
+        Component state preserved correctly.`
+            },
+            'component-type-change': {
+                name: 'Component Type Change',
+                description: 'Function component replaced with different component',
+                oldTree: [
+                    { type: 'Button', props: { variant: 'primary', children: 'Click' }, children: [] }
+                ],
+                newTree: [
+                    { type: 'Link', props: { href: '/', children: 'Click' }, children: [] }
+                ],
+                diff: `DIFF ANALYSIS:
+└── Button → Link (DIFFERENT COMPONENT TYPE)
+    ├── Old fiber (Button): DELETION flag
+    │   └── Button's children: recursively DELETED
+    ├── New fiber (Link): PLACEMENT flag
+    │   └── Link's children: recursively PLACED
+    └── Button's useEffect cleanup runs
+        Link's useEffect mount runs
+
+RESULT: Complete component replacement.
+        Old component unmounts (cleanup effects).
+        New component mounts (init effects).`
+            }
+        };
+
+        let currentScenario = 'same-type-props';
+
+        const scenarioButtons = document.getElementById('scenarioButtons');
+        const oldTreeEl = document.getElementById('oldTree');
+        const newTreeEl = document.getElementById('newTree');
+        const diffDetailsEl = document.getElementById('diffDetails');
+
+        function renderTree(tree, container, isOld = true) {
+            function renderNode(node, depth = 0) {
+                const indent = '  '.repeat(depth);
+                const propsStr = Object.entries(node.props || {})
+                    .filter(([k]) => k !== 'children')
+                    .map(([k, v]) => `${k}="${v}"`)
+                    .join(' ');
+                const keyAttr = node.props?.key ? ` key="${node.props.key}"` : '';
+                const children = node.children || [];
+
+                let className = 'tree-node px-2 py-1 rounded';
+                // Determine highlight class based on diff (simplified)
+                if (isOld) className += ' highlight-same';
+                else className += ' highlight-same';
+
+                return `
+                    <div class="${className}" style="margin-left: ${depth * 1.5}rem">
+                        <span class="text-gray-400">${indent}</span>
+                        <span class="text-purple-600 dark:text-purple-400"><</span>
+                        <span class="text-blue-600 dark:text-blue-400">${node.type}</span>
+                        ${keyAttr ? `<span class="text-yellow-600 dark:text-yellow-400">${keyAttr}</span>` : ''}
+                        ${propsStr ? `<span class="text-gray-600 dark:text-gray-400"> ${propsStr}</span>` : ''}
+                        <span class="text-purple-600 dark:text-purple-400">></span>
+                        ${children.length === 0 && node.props?.children !== undefined ?
+                            `<span class="text-green-600 dark:text-green-400"> {${JSON.stringify(node.props.children)}}</span>` : ''}
+                    </div>
+                    ${children.map(c => renderNode(c, depth + 1)).join('')}
+                `;
+            }
+            container.innerHTML = tree.map(n => renderNode(n)).join('');
+        }
+
+        function selectScenario(id) {
+            currentScenario = id;
+            const s = scenarios[id];
+
+            // Update button states
+            document.querySelectorAll('#scenarioButtons button').forEach(btn => {
+                btn.classList.toggle('bg-primary-600', btn.dataset.scenario === id);
+                btn.classList.toggle('text-white', btn.dataset.scenario === id);
+                btn.classList.toggle('bg-gray-100', btn.dataset.scenario !== id);
+                btn.classList.toggle('dark:bg-gray-700', btn.dataset.scenario !== id);
+            });
+
+            renderTree(s.oldTree, oldTreeEl, true);
+            renderTree(s.newTree, newTreeEl, false);
+            diffDetailsEl.textContent = s.diff;
+        }
+
+        // Initialize scenarios
+        Object.entries(scenarios).forEach(([id, s]) => {
+            const btn = document.createElement('button');
+            btn.dataset.scenario = id;
+            btn.className = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors ' +
+                (id === currentScenario ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600');
+            btn.textContent = s.name;
+            btn.onclick = () => selectScenario(id);
+            scenarioButtons.appendChild(btn);
+        });
+
+        // Initial render
+        selectScenario(currentScenario);
+    </script>
+</body>
+</html>

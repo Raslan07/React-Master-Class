@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rendering Visualizer - React Internals Masterclass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
+    <header class="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <a href="../index.html" class="flex items-center gap-2 font-bold text-xl text-primary-600 dark:text-primary-400">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                React Internals
+            </a>
+            <span class="text-sm text-gray-500">Rendering Visualizer</span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold mb-2">Rendering Visualizer</h1>
+            <p class="text-gray-600 dark:text-gray-400">Watch the complete render pipeline: State Change → Render → Virtual DOM → DOM Update</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
+            <div class="flex flex-wrap items-center gap-4 mb-6">
+                <div class="flex items-center gap-2">
+                    <button id="playBtn" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium">
+                        ▶ Start Animation
+                    </button>
+                    <button id="pauseBtn" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium" disabled>
+                        ⏸ Pause
+                    </button>
+                    <button id="stepBtn" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium" disabled>
+                        ⏭ Step
+                    </button>
+                    <button id="resetBtn" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium">
+                        ↺ Reset
+                    </button>
+                </div>
+                <div class="flex items-center gap-2 ml-auto">
+                    <label class="text-sm text-gray-600 dark:text-gray-400">Speed:</label>
+                    <input type="range" id="speedRange" min="0.5" max="3" step="0.1" value="1" class="w-32 accent-primary-600">
+                    <span id="speedValue" class="text-sm text-gray-600 dark:text-gray-400 w-10 text-right">1.0x</span>
+                </div>
+            </div>
+            <div class="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                <span>Step: <span id="currentStep" class="font-mono font-bold">0</span> / <span class="font-mono">6</span></span>
+                <span id="phaseDescription" class="font-medium text-primary-600 dark:text-primary-400">Ready to start</span>
+            </div>
+        </div>
+
+        <!-- Visualization -->
+        <div class="grid lg:grid-cols-2 gap-6">
+            <!-- Pipeline Flow -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <h2 class="text-xl font-semibold mb-4">Render Pipeline</h2>
+                <div id="pipelineFlow" class="space-y-3">
+                    <!-- Steps will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Code / State Display -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border border border border-gray-200 dark:border-gray-700 p-6">
+                <h2 class="text-xl font-semibold mb-4">Current State</h2>
+                <div id="stateDisplay" class="font-mono text-sm bg-gray-950 dark:bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                    <pre id="stateCode">Click "Start Animation" to begin</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Explanation -->
+        <div class="mt-8 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h2 class="text-xl font-semibold mb-4">What Happens During Rendering</h2>
+            <div class="grid md:grid-cols-2 gap-6 text-sm">
+                <div>
+                    <h3 class="font-semibold text-primary-600 dark:text-primary-400 mb-2">Render Phase (Interruptible)</h3>
+                    <ul class="space-y-1 text-gray-600 dark:text-gray-400">
+                        <li>• Component functions are called</li>
+                        <li>• Hooks execute (useState, useReducer, etc.)</li>
+                        <li>• JSX → React.createElement()</li>
+                        <li>• React Elements created (Virtual DOM)</li>
+                        <li>• Reconciliation (diffing algorithm)</li>
+                        <li>• Fiber flags marked (Placement, Update, Deletion)</li>
+                        <li>• Work-In-Progress tree built</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-accent-600 dark:text-accent-400 mb-2">Commit Phase (Synchronous)</h3>
+                    <ul class="space-y-1 text-gray-600 dark:text-gray-400">
+                        <li>• DOM mutations applied</li>
+                        <li>• Ref updates attached</li>
+                        <li>• useLayoutEffect (synchronous)</li>
+                        <li>• Browser paint</li>
+                        <li>• useEffect (asynchronous, after paint)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Visualizer State
+        const steps = [
+            {
+                id: 'state-change',
+                title: '1. State Change Triggered',
+                description: 'User calls setState() or useState setter',
+                code: `// User clicks button
+const [count, setCount] = useState(0);
+<button onClick={() => setCount(c => c + 1)}>
+  Increment
+</button>
+
+// React schedules an update with priority`
+            },
+            {
+                id: 'schedule',
+                title: '2. Update Scheduled',
+                description: 'Scheduler assigns priority lane and queues work',
+                code: `// Scheduler receives update
+// Lanes: SyncLane (urgent) | DefaultLane | TransitionLane
+
+// Work loop begins
+function workLoop() {
+  while (workInProgress !== null) {
+    performUnitOfWork(workInProgress);
+  }
+}`
+            },
+            {
+                id: 'render-start',
+                title: '3. Render Phase Begins',
+                description: 'React creates/updates Fiber nodes, calls components',
+                code: `// beginWork() for each fiber
+function beginWork(current, workInProgress) {
+  // 1. Check if work needed (bailout)
+  // 2. Call component function
+  const children = Component(props);
+  // 3. Reconcile children
+  reconcileChildren(current, workInProgress, children);
+}`
+            },
+            {
+                id: 'jsx-execution',
+                title: '4. Component Execution & JSX',
+                description: 'Your component runs, hooks execute, JSX returned',
+                code: `function Counter() {
+  const [count, setCount] = useState(0);
+  // ↑ Hook executes, returns [0, setter]
+
+  const doubled = useMemo(() => count * 2, [count]);
+  // ↑ Memoized computation
+
+  return (
+    <div className="counter">
+      <h1>{count}</h1>  {/* ← JSX */}
+      <p>Doubled: {doubled}</p>
+    </div>
+  );
+}
+
+// JSX transpiles to:
+React.createElement('div', { className: 'counter' },
+  React.createElement('h1', null, count),
+  React.createElement('p', null, 'Doubled: ', doubled)
+);`
+            },
+            {
+                id: 'virtual-dom',
+                title: '5. Virtual DOM Created',
+                description: 'React Elements (lightweight JS objects) form the new tree',
+                code: `// React Element tree (Virtual DOM)
+{
+  type: 'div',
+  props: { className: 'counter' },
+  key: null,
+  ref: null,
+  $$typeof: Symbol(react.element),
+  children: [
+    { type: 'h1', props: { children: 1 }, ... },
+    { type: 'p', props: { children: 'Doubled: 2' }, ... }
+  ]
+}
+
+// Old tree ↔ New tree comparison happens next`
+            },
+            {
+                id: 'reconciliation',
+                title: '6. Reconciliation & Commit',
+                description: 'Diffing algorithm compares trees, DOM updated',
+                code: `// Diffing: Same type? Update props. Different? Replace.
+// Keys help match list items efficiently.
+
+// Commit Phase (synchronous):
+// 1. beforeMutation - snapshot DOM
+// 2. mutation - apply DOM changes
+// 3. layout - useLayoutEffect, ref updates
+// 4. passive - useEffect (after paint)
+
+function commitRoot(root) {
+  commitBeforeMutationEffects();
+  commitMutationEffects();    // ← DOM changes here
+  commitLayoutEffects();      // ← useLayoutEffect
+  flushPassiveEffects();      // ← useEffect (async)
+}`
+            }
+        ];
+
+        let currentStep = 0;
+        let isPlaying = false;
+        let animationTimeout = null;
+        let speed = 1;
+
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const stepBtn = document.getElementById('stepBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const speedRange = document.getElementById('speedRange');
+        const speedValue = document.getElementById('speedValue');
+        const currentStepEl = document.getElementById('currentStep');
+        const phaseDescription = document.getElementById('phaseDescription');
+        const pipelineFlow = document.getElementById('pipelineFlow');
+        const stateCode = document.getElementById('stateCode');
+
+        function renderPipeline() {
+            pipelineFlow.innerHTML = steps.map((step, index) => {
+                let statusClass = 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400';
+                let icon = '⏳';
+                if (index < currentStep) {
+                    statusClass = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400';
+                    icon = '✓';
+                } else if (index === currentStep && isPlaying) {
+                    statusClass = 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 animate-pulse';
+                    icon = '⟳';
+                }
+                return `
+                    <div class="p-3 rounded-lg border-l-4 ${statusClass} transition-all duration-300">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="font-mono">${icon}</span>
+                            <span class="font-medium">${step.title}</span>
+                        </div>
+                        <p class="text-sm ml-6">${step.description}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateDisplay() {
+            currentStepEl.textContent = currentStep;
+            if (currentStep < steps.length) {
+                phaseDescription.textContent = steps[currentStep].title;
+                stateCode.textContent = steps[currentStep].code;
+            } else {
+                phaseDescription.textContent = 'Animation complete!';
+            }
+            renderPipeline();
+            updateButtons();
+        }
+
+        function updateButtons() {
+            playBtn.disabled = isPlaying || currentStep >= steps.length;
+            pauseBtn.disabled = !isPlaying;
+            stepBtn.disabled = isPlaying || currentStep >= steps.length;
+            resetBtn.disabled = currentStep === 0 && !isPlaying;
+        }
+
+        function play() {
+            if (currentStep >= steps.length) return;
+            isPlaying = true;
+            animate();
+        }
+
+        function pause() {
+            isPlaying = false;
+            if (animationTimeout) clearTimeout(animationTimeout);
+        }
+
+        function step() {
+            if (currentStep < steps.length) {
+                currentStep++;
+                updateDisplay();
+            }
+        }
+
+        function reset() {
+            pause();
+            currentStep = 0;
+            updateDisplay();
+        }
+
+        function animate() {
+            if (!isPlaying || currentStep >= steps.length) {
+                isPlaying = false;
+                updateButtons();
+                return;
+            }
+            const delay = 2000 / speed; // Base 2 seconds per step
+            animationTimeout = setTimeout(() => {
+                currentStep++;
+                updateDisplay();
+                if (isPlaying && currentStep < steps.length) {
+                    animate();
+                } else {
+                    isPlaying = false;
+                    updateButtons();
+                }
+            }, delay);
+        }
+
+        // Event listeners
+        playBtn.addEventListener('click', play);
+        pauseBtn.addEventListener('click', pause);
+        stepBtn.addEventListener('click', step);
+        resetBtn.addEventListener('click', reset);
+        speedRange.addEventListener('input', (e) => {
+            speed = parseFloat(e.target.value);
+            speedValue.textContent = speed.toFixed(1) + 'x';
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') { e.preventDefault(); isPlaying ? pause() : play(); }
+            if (e.code === 'ArrowRight') step();
+            if (e.code === 'ArrowLeft') { if (currentStep > 0) { currentStep--; updateDisplay(); } }
+            if (e.code === 'KeyR') reset();
+        });
+
+        // Initialize
+        updateDisplay();
+    </script>
+</body>
+</html>
